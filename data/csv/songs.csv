@@ -1,0 +1,9 @@
+title,singer,music_director,actor,genre,language,movie_name,album,year,duration_seconds,audio_file_path,moods
+Pasoori,Ali Sethi,Shuja Haider,,Romantic,Urdu,,Coke Studio Season 14,2022,142,/app/songs/Alisethi_pasoori_urdu.mp3,romantic|chill|nostalgic
+ButtAbomma,Armaan Malik,Thaman S,Balakrishna,Folk,Telugu,Ala Vaikunthapurramuloo,Ala Vaikunthapurramuloo,2020,198,/app/songs/ArmaanMalik_buttabomma_telugu.mp3,energetic|happy|party
+Oo Antava Oo Oo Antava,Indravathi Chauhan,Devi Sri Prasad,Allu Arjun,Party,Telugu,Pushpa: The Rise,Pushpa: The Rise,2021,227,/app/songs/Indravathi_Oo Antava Oo Oo Antava_telugu.mp3,party|energetic|happy
+Naattu Koothu,Rahul Sipling,Anirudh Ravichander,Rajinikanth,Party,Tamil,RRR,RRR,2022,208,/app/songs/RahulSipligunj_Naattu Koothu_Tamil.mp3,party|energetic|workout
+Kumkumala,Sid Sriram,Mani Sharma,Dev Mohan,Romantic,Telugu,Brahmastra Part One,Brahmastra Part One,2022,167,/app/songs/sidsriram_Kumkumala_telugu.mp3,romantic|happy|feel good
+Srivalli,Sid Sriram,Devi Sri Prasad,Allu Arjun,Sad,Telugu,Pushpa: The Rise,Pushpa: The Rise,2021,224,/app/songs/sidsriram_Srivalli_telugu.mp3,sad|lonely|nostalgic
+Kadalalle,Sid Sriram,Govind Vasantha,Vijay Sethupathi,Romantic,Telugu,Dear Comrade,Dear Comrade,2022,260,/app/songs/sidsriram_kadalalle_telugu.mp3,sad|romantic|nostalgic
+Stardom,Taylor Swift,Taylor Swift,,Pop,English,,The Tortured Poets Department,2022,177,/app/songs/taylorSwift_stardom_english.mp3,energetic|party|feel good

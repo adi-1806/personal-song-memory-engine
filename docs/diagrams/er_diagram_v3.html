@@ -1,0 +1,194 @@
+
+<div id="erd" style="padding:8px 0"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"Anthropic Sans", sans-serif',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '12px',
+    fontFamily: '"Anthropic Sans", sans-serif',
+    lineColor: dark ? '#9c9a92' : '#73726c',
+    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+  },
+});
+
+const diagram = `erDiagram
+  LANGUAGE {
+    int language_id PK
+    string language_name
+  }
+  GENRE {
+    int genre_id PK
+    string genre_name
+  }
+  SINGER {
+    int singer_id PK
+    string singer_name
+  }
+  MUSIC_DIRECTOR {
+    int director_id PK
+    string director_name
+  }
+  ACTOR {
+    int actor_id PK
+    string actor_name
+  }
+  MOOD {
+    int mood_id PK
+    string mood_name
+  }
+  SONG {
+    int song_id PK
+    string title
+    int language_id FK
+    int singer_id FK
+    int director_id FK
+    int actor_id FK
+    int genre_id FK
+    string album
+    int year
+    int duration_seconds
+    string audio_file_path
+    timestamp created_at
+  }
+  SONG_MOOD {
+    int song_mood_id PK
+    int song_id FK
+    int mood_id FK
+  }
+  SONG_LIKE {
+    int like_id PK
+    int song_id FK
+    string status
+    timestamp updated_at
+  }
+  USER_EVENT {
+    int event_id PK
+    int song_id FK
+    string event_type
+    int selected_mood_id FK
+    string search_query
+    int listening_duration
+    timestamp event_time
+  }
+  SEARCH_HISTORY {
+    int search_id PK
+    string query
+    int result_count
+    timestamp searched_at
+  }
+  SILVER_EVENTS {
+    int silver_id PK
+    int event_id FK
+    int song_id FK
+    string event_type
+    int mood_id FK
+    string language_name
+    string singer_name
+    string genre_name
+    int listening_duration
+    boolean is_completed
+    timestamp event_time
+  }
+  GOLD_SONG_STATS {
+    int stat_id PK
+    int song_id FK
+    int play_count
+    int complete_count
+    int skip_count
+    int like_count
+    int dislike_count
+    float completion_rate
+    timestamp last_played_at
+    timestamp computed_at
+  }
+  GOLD_SINGER_STATS {
+    int stat_id PK
+    int singer_id FK
+    int total_plays
+    int total_likes
+    int total_skips
+    timestamp computed_at
+  }
+  GOLD_MOOD_STATS {
+    int stat_id PK
+    int mood_id FK
+    int times_selected
+    int songs_played
+    timestamp computed_at
+  }
+  GOLD_LANGUAGE_STATS {
+    int stat_id PK
+    int language_id FK
+    int total_plays
+    int total_likes
+    int total_skips
+    timestamp computed_at
+  }
+  RECOMMENDATION_SCORES {
+    int rec_id PK
+    int song_id FK
+    float play_score
+    float like_score
+    float recency_score
+    float completion_score
+    float skip_penalty
+    float final_score
+    int rank
+    timestamp scored_at
+  }
+
+  LANGUAGE ||--o{ SONG : "spoken in"
+  GENRE ||--o{ SONG : "categorized as"
+  SINGER ||--o{ SONG : "performed by"
+  MUSIC_DIRECTOR ||--o{ SONG : "composed by"
+  ACTOR ||--o{ SONG : "features"
+  SONG ||--o{ SONG_MOOD : "tagged with"
+  MOOD ||--o{ SONG_MOOD : "applied to"
+  SONG ||--o| SONG_LIKE : "like status"
+  SONG ||--o{ USER_EVENT : "generates"
+  MOOD ||--o{ USER_EVENT : "selected in"
+  USER_EVENT ||--o| SILVER_EVENTS : "cleaned into"
+  SONG ||--o| GOLD_SONG_STATS : "aggregated in"
+  SINGER ||--o| GOLD_SINGER_STATS : "aggregated in"
+  MOOD ||--o| GOLD_MOOD_STATS : "aggregated in"
+  LANGUAGE ||--o| GOLD_LANGUAGE_STATS : "aggregated in"
+  SONG ||--o| RECOMMENDATION_SCORES : "scored in"
+`;
+
+try {
+  const { svg } = await mermaid.render('erd-svg', diagram);
+  document.getElementById('erd').innerHTML = svg;
+
+  document.querySelectorAll('#erd svg .node').forEach(node => {
+    const firstPath = node.querySelector('path[d]');
+    if (!firstPath) return;
+    const d = firstPath.getAttribute('d');
+    const nums = d.match(/-?[\d.]+/g)?.map(Number);
+    if (!nums || nums.length < 8) return;
+    const xs = [nums[0],nums[2],nums[4],nums[6]];
+    const ys = [nums[1],nums[3],nums[5],nums[7]];
+    const x = Math.min(...xs), y = Math.min(...ys);
+    const w = Math.max(...xs)-x, h = Math.max(...ys)-y;
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x',x); rect.setAttribute('y',y);
+    rect.setAttribute('width',w); rect.setAttribute('height',h);
+    rect.setAttribute('rx','8');
+    for (const a of ['fill','stroke','stroke-width','class','style']) {
+      if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
+    }
+    firstPath.replaceWith(rect);
+  });
+
+  document.querySelectorAll('#erd svg .row-rect-odd path, #erd svg .row-rect-even path').forEach(p => {
+    p.setAttribute('stroke','none');
+  });
+} catch (err) {
+  document.getElementById('erd').innerHTML = '<p style="color:var(--color-text-danger);padding:1rem">Render error: ' + err.message + '</p>';
+}
+</script>
