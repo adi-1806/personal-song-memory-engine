@@ -2,7 +2,7 @@
 
 ## Overview
 - Total tables: 17
-- Database name: songmemory
+- Database name: smriti
 - PostgreSQL version: 15
 - All tables live in the default `public` schema
 - Init file: `backend/db/init.sql`

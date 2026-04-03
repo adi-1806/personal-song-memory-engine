@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     postgres_host: str
     postgres_port: int = 5432
 
+    lastfm_api_key: str = ""
+    lastfm_api_secret: str = ""
+
     @property
     def database_url(self) -> str:
         return (

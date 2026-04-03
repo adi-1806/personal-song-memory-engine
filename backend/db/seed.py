@@ -1,11 +1,20 @@
 """
-Seed script — reads data/csv/songs.csv and inserts all songs into the DB.
-Run once after Docker is up:
-  docker exec songmemory_backend python -m backend.db.seed
+Seed script — reads CSVs and inserts songs into the DB.
+
+Seeding order:
+  1. data/csv/songs.csv        (our 8 hand-curated songs — always seeded)
+  2. data/csv/lastfm_songs.csv (Last.fm fetched songs — seeded if file exists)
+
+Skip logic: a song is skipped if its audio_file_path already exists in the DB.
+This prevents duplicates when the script is re-run.
+
+Run inside the backend container:
+  docker exec smriti_backend python -m backend.db.seed
 """
 import csv
 import logging
 import os
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -17,7 +26,9 @@ from backend.models.song import Song, SongMood
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "csv", "songs.csv")
+_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "csv"
+PRIMARY_CSV = _DATA_DIR / "songs.csv"
+LASTFM_CSV = _DATA_DIR / "lastfm_songs.csv"
 
 
 # ── get-or-create helpers (Rule 9) ───────────────────────────────────────────
@@ -76,78 +87,141 @@ def _get_mood_by_name(name: str, db: Session) -> Optional[Mood]:
     return db.query(Mood).filter_by(mood_name=name.strip()).first()
 
 
-# ── main seeder ──────────────────────────────────────────────────────────────
+# ── CSV loader ────────────────────────────────────────────────────────────────
 
-def seed():
+def load_csv(filepath: Path) -> list[dict]:
+    """Load any CSV matching the Smriti song template columns."""
+    rows = []
+    with open(filepath, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows.append(row)
+    logger.info("Loaded %d rows from %s", len(rows), filepath.name)
+    return rows
+
+
+# ── Single-song inserter ──────────────────────────────────────────────────────
+
+def _seed_row(row: dict, db: Session) -> str:
+    """
+    Insert one song row. Returns 'seeded' or 'skipped'.
+    Skip condition: audio_file_path already exists in DB.
+    """
+    audio_path = row.get("audio_file_path", "").strip()
+    if not audio_path:
+        return "skipped"
+
+    if db.query(Song).filter_by(audio_file_path=audio_path).first():
+        return "skipped"
+
+    title = row.get("title", "").strip()
+    if not title:
+        return "skipped"
+
+    # ── Lookup table get-or-create ────────────────────────────────────────────
+    language_name = row.get("language", "").strip() or "Unknown"
+    language = _get_or_create_language(language_name, db)
+
+    genre_name = row.get("genre", "").strip() or "Unknown"
+    genre = _get_or_create_genre(genre_name, db)
+
+    singer_name = row.get("singer", "").strip()
+    if not singer_name:
+        return "skipped"
+    singer = _get_or_create_singer(singer_name, db)
+
+    # music_director and actor are nullable — empty string → None
+    director_name = row.get("music_director", "").strip()
+    director = _get_or_create_director(director_name, db) if director_name else None
+
+    actor_name = row.get("actor", "").strip()
+    actor = _get_or_create_actor(actor_name, db) if actor_name else None
+
+    # ── Nullable scalar fields ────────────────────────────────────────────────
+    movie_name = row.get("movie_name", "").strip() or None   # nullable per schema
+    album = row.get("album", "").strip() or None
+    year_raw = row.get("year", "").strip()
+    year = int(year_raw) if year_raw and year_raw.isdigit() else None
+    duration_raw = row.get("duration_seconds", "0").strip()
+    duration = int(duration_raw) if duration_raw and duration_raw.isdigit() else 0
+
+    # ── Insert song ───────────────────────────────────────────────────────────
+    song = Song(
+        title=title,
+        language_id=language.language_id,
+        singer_id=singer.singer_id,
+        director_id=director.director_id if director else None,
+        actor_id=actor.actor_id if actor else None,
+        genre_id=genre.genre_id,
+        movie_name=movie_name,
+        album=album,
+        year=year,
+        duration_seconds=duration,
+        audio_file_path=audio_path,
+    )
+    db.add(song)
+    db.commit()
+    db.refresh(song)
+
+    # ── Insert song_mood rows (pipe-separated) ────────────────────────────────
+    moods_raw = row.get("moods", "").strip()
+    if moods_raw:
+        for mood_name in moods_raw.split("|"):
+            mood = _get_mood_by_name(mood_name.strip(), db)
+            if mood:
+                exists = db.query(SongMood).filter_by(
+                    song_id=song.song_id, mood_id=mood.mood_id
+                ).first()
+                if not exists:
+                    db.add(SongMood(song_id=song.song_id, mood_id=mood.mood_id))
+                db.commit()
+            else:
+                logger.warning("Mood not found in DB: '%s' (song: %s)", mood_name.strip(), title)
+
+    logger.info("Seeded: %s — %s", singer_name, title)
+    return "seeded"
+
+
+# ── Main seeder ───────────────────────────────────────────────────────────────
+
+def seed_csv(filepath: Path, db: Session) -> tuple[int, int]:
+    """Seed all rows from one CSV. Returns (seeded_count, skipped_count)."""
+    if not filepath.exists():
+        logger.info("File not found, skipping: %s", filepath)
+        return 0, 0
+
+    rows = load_csv(filepath)
+    seeded = skipped = 0
+    for row in rows:
+        result = _seed_row(row, db)
+        if result == "seeded":
+            seeded += 1
+        else:
+            skipped += 1
+
+    return seeded, skipped
+
+
+def seed() -> None:
     db: Session = SessionLocal()
     try:
-        csv_path = os.path.abspath(CSV_PATH)
-        logger.info("Reading CSV: %s", csv_path)
+        total_seeded = total_skipped = 0
 
-        with open(csv_path, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                title = row["title"].strip()
+        # 1 — Always seed our 8 hand-curated songs first
+        s, k = seed_csv(PRIMARY_CSV, db)
+        total_seeded += s
+        total_skipped += k
+        logger.info("songs.csv → seeded %d, skipped %d", s, k)
 
-                # Skip if already seeded
-                existing = db.query(Song).filter_by(title=title).first()
-                if existing:
-                    logger.info("Already exists, skipping: %s", title)
-                    continue
+        # 2 — Seed Last.fm songs if the file exists
+        s, k = seed_csv(LASTFM_CSV, db)
+        total_seeded += s
+        total_skipped += k
+        if LASTFM_CSV.exists():
+            logger.info("lastfm_songs.csv → seeded %d, skipped %d", s, k)
 
-                language = _get_or_create_language(row["language"].strip(), db)
-                genre = _get_or_create_genre(row["genre"].strip(), db)
-                singer = _get_or_create_singer(row["singer"].strip(), db)
+        print(f"\nSeeding complete: seeded {total_seeded} new songs, skipped {total_skipped} existing.\n")
 
-                director_name = row.get("music_director", "").strip()
-                director = _get_or_create_director(director_name, db) if director_name else None
-
-                actor_name = row.get("actor", "").strip()
-                actor = _get_or_create_actor(actor_name, db) if actor_name else None
-
-                # Nullable fields — empty string becomes None
-                movie_name = row.get("movie_name", "").strip() or None
-                album = row.get("album", "").strip() or None
-                year_raw = row.get("year", "").strip()
-                year = int(year_raw) if year_raw else None
-                duration = int(row.get("duration_seconds", 0) or 0)
-
-                song = Song(
-                    title=title,
-                    language_id=language.language_id,
-                    singer_id=singer.singer_id,
-                    director_id=director.director_id if director else None,
-                    actor_id=actor.actor_id if actor else None,
-                    genre_id=genre.genre_id,
-                    movie_name=movie_name,
-                    album=album,
-                    year=year,
-                    duration_seconds=duration,
-                    audio_file_path=row["audio_file_path"].strip(),
-                )
-                db.add(song)
-                db.commit()
-                db.refresh(song)
-                logger.info("Seeded song: %s (id=%d)", title, song.song_id)
-
-                # Seed song_mood rows (pipe-separated moods)
-                moods_raw = row.get("moods", "").strip()
-                if moods_raw:
-                    for mood_name in moods_raw.split("|"):
-                        mood = _get_mood_by_name(mood_name.strip(), db)
-                        if mood:
-                            existing_sm = (
-                                db.query(SongMood)
-                                .filter_by(song_id=song.song_id, mood_id=mood.mood_id)
-                                .first()
-                            )
-                            if not existing_sm:
-                                db.add(SongMood(song_id=song.song_id, mood_id=mood.mood_id))
-                            db.commit()
-                        else:
-                            logger.warning("Mood not found in DB: %s", mood_name.strip())
-
-        logger.info("Seeding complete.")
     finally:
         db.close()
 

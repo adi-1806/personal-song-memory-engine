@@ -1,4 +1,4 @@
-# CLAUDE.md — Personal Song Memory Engine
+# CLAUDE.md — Smriti
 
 This is the master context file for Claude Code.
 Read ALL referenced files before writing any code.

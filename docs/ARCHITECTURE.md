@@ -91,10 +91,10 @@ Airflow triggers scoring script after gold task
 
 | Service              | Container name          | Port  |
 |----------------------|-------------------------|-------|
-| PostgreSQL           | songmemory_postgres     | 5432  |
-| pgAdmin              | songmemory_pgadmin      | 5050  |
-| FastAPI backend      | songmemory_backend      | 8000  |
-| Airflow              | songmemory_airflow      | 8080  |
+| PostgreSQL           | smriti_postgres     | 5432  |
+| pgAdmin              | smriti_pgadmin      | 5050  |
+| FastAPI backend      | smriti_backend      | 8000  |
+| Airflow              | smriti_airflow      | 8080  |
 | React (dev server)   | runs locally via npm    | 3000  |
 
 ## Volumes (data persistence)

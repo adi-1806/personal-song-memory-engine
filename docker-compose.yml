@@ -4,7 +4,7 @@ services:
 
   postgres:
     image: postgres:15
-    container_name: songmemory_postgres
+    container_name: smriti_postgres
     env_file:
       - .env
     environment:
@@ -24,7 +24,7 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4
-    container_name: songmemory_pgadmin
+    container_name: smriti_pgadmin
     env_file:
       - .env
     environment:
@@ -40,7 +40,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: songmemory_backend
+    container_name: smriti_backend
     env_file:
       - .env
     ports:

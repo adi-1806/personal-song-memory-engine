@@ -6,7 +6,7 @@ function App() {
   return (
     <BrowserRouter>
       <nav style={styles.nav}>
-        <Link to="/" style={styles.brand}>🎵 Song Memory</Link>
+        <Link to="/" style={styles.brand}>🎵 Smriti</Link>
         <div style={styles.links}>
           <Link to="/" style={styles.link}>Home</Link>
           <Link to="/liked" style={styles.link}>♥ Liked</Link>
