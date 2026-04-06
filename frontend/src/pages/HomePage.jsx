@@ -1,21 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import SearchBar from '../components/SearchBar';
 import SongCard from '../components/SongCard';
 import MoodSelector from '../components/MoodSelector';
-import Player from '../components/Player';
 import { getAllSongs, searchSongs, likeSong, dislikeSong } from '../services/api';
+import { usePlayer } from '../context/PlayerContext';
 
 function HomePage() {
   const [songs, setSongs] = useState([]);
-  const [selectedSong, setSelectedSong] = useState(null);
   const [activeMood, setActiveMood] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const loadAllSongs = async () => {
+  // Expose song list to Player for skip navigation
+  const { setSongs: setPlayerSongs, updateCurrentSong } = usePlayer();
+
+  const applyAndStore = useCallback((newSongs) => {
+    setSongs(newSongs);
+    setPlayerSongs(newSongs); // keep Player skip list in sync
+  }, [setPlayerSongs]);
+
+  const loadAllSongs = useCallback(async () => {
     try {
       const res = await getAllSongs();
-      setSongs(res.data);
+      applyAndStore(res.data);
       setError(null);
     } catch (e) {
       console.error('Failed to load songs', e);
@@ -23,16 +30,17 @@ function HomePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [applyAndStore]);
 
-  useEffect(() => { loadAllSongs(); }, []);
+  // FIX 2: only load songs on mount — never auto-play
+  useEffect(() => { loadAllSongs(); }, [loadAllSongs]);
 
   const handleSearch = async (q) => {
     if (!q && !activeMood) { loadAllSongs(); return; }
     setLoading(true);
     try {
       const res = await searchSongs(q, '', '', activeMood || '');
-      setSongs(res.data);
+      applyAndStore(res.data);
       setError(null);
     } catch (e) {
       console.error('Search failed', e);
@@ -51,7 +59,7 @@ function HomePage() {
     setLoading(true);
     try {
       const res = await searchSongs('', '', '', mood || '');
-      setSongs(res.data);
+      applyAndStore(res.data);
     } catch (e) {
       console.error('Mood filter failed', e);
     } finally {
@@ -59,28 +67,23 @@ function HomePage() {
     }
   };
 
-  const handlePlay = (song) => {
-    setSelectedSong(song);
-  };
-
-  const handleLike = async (songId) => {
+  // FIX 5: toggle like without refetching the full song list
+  const handleToggleLike = async (song) => {
     try {
-      await likeSong(songId);
-      // Refresh so is_liked updates on cards
-      const res = await getAllSongs();
-      setSongs(res.data);
+      if (song.is_liked) {
+        await dislikeSong(song.song_id);
+      } else {
+        await likeSong(song.song_id);
+      }
+      const updated = { ...song, is_liked: !song.is_liked };
+      // Update local render list
+      setSongs((prev) => prev.map((s) => (s.song_id === song.song_id ? updated : s)));
+      // Update Player's skip list
+      setPlayerSongs((prev) => prev.map((s) => (s.song_id === song.song_id ? updated : s)));
+      // Keep bottom player's currentSong in sync
+      updateCurrentSong(updated);
     } catch (e) {
-      console.error('Like failed', e);
-    }
-  };
-
-  const handleDislike = async (songId) => {
-    try {
-      await dislikeSong(songId);
-      const res = await getAllSongs();
-      setSongs(res.data);
-    } catch (e) {
-      console.error('Dislike failed', e);
+      console.error('Like toggle failed', e);
     }
   };
 
@@ -117,21 +120,12 @@ function HomePage() {
               <SongCard
                 key={song.song_id}
                 song={song}
-                onPlay={handlePlay}
-                isActive={selectedSong?.song_id === song.song_id}
+                onToggleLike={handleToggleLike}
               />
             ))}
           </div>
         )}
       </section>
-
-      {/* Persistent player at bottom */}
-      <Player
-        songs={songs}
-        selectedSong={selectedSong}
-        onLike={handleLike}
-        onDislike={handleDislike}
-      />
     </div>
   );
 }

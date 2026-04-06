@@ -1,43 +1,51 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import SongCard from '../components/SongCard';
-import Player from '../components/Player';
 import { getLikedSongs, likeSong, dislikeSong } from '../services/api';
+import { usePlayer } from '../context/PlayerContext';
 
 function LikedSongsPage() {
   const [songs, setSongs] = useState([]);
-  const [selectedSong, setSelectedSong] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const loadLiked = async () => {
+  // Expose liked song list to Player for skip navigation
+  const { setSongs: setPlayerSongs, updateCurrentSong } = usePlayer();
+
+  const applyAndStore = useCallback((newSongs) => {
+    setSongs(newSongs);
+    setPlayerSongs(newSongs);
+  }, [setPlayerSongs]);
+
+  // FIX 2: only load songs on mount — never auto-play
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await getLikedSongs();
+        applyAndStore(res.data);
+      } catch (e) {
+        console.error('Failed to load liked songs', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [applyAndStore]);
+
+  // FIX 5: toggle like without refetching the full list
+  const handleToggleLike = async (song) => {
     try {
-      const res = await getLikedSongs();
-      setSongs(res.data);
+      if (song.is_liked) {
+        await dislikeSong(song.song_id);
+        // Remove from liked list (dislike on liked-songs page = remove the entry)
+        applyAndStore(songs.filter((s) => s.song_id !== song.song_id));
+        updateCurrentSong({ song_id: song.song_id, is_liked: false });
+      } else {
+        await likeSong(song.song_id);
+        const updatedSong = { ...song, is_liked: true };
+        applyAndStore(songs.map((s) => (s.song_id === song.song_id ? updatedSong : s)));
+        updateCurrentSong(updatedSong);
+      }
     } catch (e) {
-      console.error('Failed to load liked songs', e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { loadLiked(); }, []);
-
-  const handlePlay = (song) => setSelectedSong(song);
-
-  const handleLike = async (songId) => {
-    try {
-      await likeSong(songId);
-      loadLiked();
-    } catch (e) {
-      console.error('Like failed', e);
-    }
-  };
-
-  const handleDislike = async (songId) => {
-    try {
-      await dislikeSong(songId);
-      loadLiked();
-    } catch (e) {
-      console.error('Dislike failed', e);
+      console.error('Like toggle failed', e);
     }
   };
 
@@ -58,19 +66,11 @@ function LikedSongsPage() {
             <SongCard
               key={song.song_id}
               song={song}
-              onPlay={handlePlay}
-              isActive={selectedSong?.song_id === song.song_id}
+              onToggleLike={handleToggleLike}
             />
           ))}
         </div>
       )}
-
-      <Player
-        songs={songs}
-        selectedSong={selectedSong}
-        onLike={handleLike}
-        onDislike={handleDislike}
-      />
     </div>
   );
 }

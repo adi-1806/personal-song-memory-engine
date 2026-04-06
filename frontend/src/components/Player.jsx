@@ -1,77 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
-import { getStreamUrl } from '../services/api';
+import { usePlayer } from '../context/PlayerContext';
 
-function Player({ songs, selectedSong, onLike, onDislike }) {
-  const audioRef = useRef(null);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
-
-  const currentSong = songs.length > 0 ? songs[currentIndex] : null;
-
-  // When parent selects a song (user clicked Play on a SongCard), find its index
-  useEffect(() => {
-    if (!selectedSong || songs.length === 0) return;
-    const idx = songs.findIndex((s) => s.song_id === selectedSong.song_id);
-    if (idx !== -1) setCurrentIndex(idx);
-  }, [selectedSong?.song_id]); // eslint-disable-line
-
-  // Load + autoplay when current song changes
-  useEffect(() => {
-    if (!currentSong || !audioRef.current) return;
-    audioRef.current.src = getStreamUrl(currentSong.song_id);
-    audioRef.current.load();
-    setProgress(0);
-    setDuration(0);
-    const p = audioRef.current.play();
-    if (p) p.then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
-  }, [currentSong?.song_id]); // eslint-disable-line
-
-  const togglePlay = () => {
-    if (!audioRef.current || !currentSong) return;
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-    } else {
-      audioRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
-    }
-  };
-
-  const skipNext = () => {
-    if (songs.length === 0) return;
-    setCurrentIndex((prev) => (prev + 1) % songs.length);
-  };
-
-  const skipPrev = () => {
-    if (songs.length === 0) return;
-    // If past 3 seconds, restart current song; else go to previous
-    if (audioRef.current && audioRef.current.currentTime > 3) {
-      audioRef.current.currentTime = 0;
-      setProgress(0);
-    } else {
-      setCurrentIndex((prev) => (prev - 1 + songs.length) % songs.length);
-    }
-  };
-
-  const handleSeek = (e) => {
-    if (!audioRef.current || !duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pct = (e.clientX - rect.left) / rect.width;
-    const newTime = Math.max(0, Math.min(pct * duration, duration));
-    audioRef.current.currentTime = newTime;
-    setProgress(newTime);
-  };
-
-  const handleTimeUpdate = () => {
-    if (audioRef.current) setProgress(audioRef.current.currentTime);
-  };
-
-  const handleLoadedMetadata = () => {
-    if (audioRef.current) setDuration(audioRef.current.duration);
-  };
-
-  const handleEnded = () => skipNext();
+function Player() {
+  const {
+    currentSong, isPlaying, progress, duration,
+    togglePlay, skipNext, skipPrev, seek,
+    likeCurrentSong, dislikeCurrentSong,
+  } = usePlayer();
 
   const fmt = (secs) => {
     if (!secs || isNaN(secs)) return '0:00';
@@ -84,13 +18,6 @@ function Player({ songs, selectedSong, onLike, onDislike }) {
 
   return (
     <div style={styles.player}>
-      <audio
-        ref={audioRef}
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-        onEnded={handleEnded}
-      />
-
       {/* Song info */}
       <div style={styles.songInfo}>
         {currentSong ? (
@@ -123,7 +50,7 @@ function Player({ songs, selectedSong, onLike, onDislike }) {
         {/* Progress bar */}
         <div style={styles.progressRow}>
           <span style={styles.time}>{fmt(progress)}</span>
-          <div style={styles.progressBar} onClick={handleSeek} title="Seek">
+          <div style={styles.progressBar} onClick={seek} title="Seek">
             <div style={{ ...styles.progressFill, width: `${pct}%` }} />
           </div>
           <span style={styles.time}>{fmt(duration)}</span>
@@ -133,7 +60,7 @@ function Player({ songs, selectedSong, onLike, onDislike }) {
       {/* Like / Dislike */}
       <div style={styles.likeSection}>
         <button
-          onClick={() => currentSong && onLike(currentSong.song_id)}
+          onClick={likeCurrentSong}
           style={{
             ...styles.likeBtn,
             color: currentSong?.is_liked ? '#e94560' : '#555',
@@ -144,7 +71,7 @@ function Player({ songs, selectedSong, onLike, onDislike }) {
           ♥
         </button>
         <button
-          onClick={() => currentSong && onDislike(currentSong.song_id)}
+          onClick={dislikeCurrentSong}
           style={styles.likeBtn}
           title="Dislike"
           disabled={!currentSong}
@@ -228,11 +155,7 @@ const styles = {
     borderRadius: 2,
     transition: 'width 0.1s linear',
   },
-  likeSection: {
-    display: 'flex',
-    gap: 8,
-    flexShrink: 0,
-  },
+  likeSection: { display: 'flex', gap: 8, flexShrink: 0 },
   likeBtn: {
     background: 'none',
     border: 'none',

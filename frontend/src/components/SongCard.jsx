@@ -1,37 +1,71 @@
-function SongCard({ song, onPlay, isActive }) {
+import { usePlayer } from '../context/PlayerContext';
+
+// FIX 4 helper — builds meta line with no nulls and no duplicate values
+function buildMetaLine(song) {
+  const parts = [
+    song.singer_name,
+    song.music_director_name || null,
+    song.language_name,
+    song.movie_name || null,
+  ]
+    .filter(Boolean)
+    .filter((v, i, arr) => arr.indexOf(v) === i); // deduplicate
+  return parts.join(' · ');
+}
+
+function SongCard({ song, onToggleLike }) {
+  const { currentSong, isPlaying, playSong, pauseSong } = usePlayer();
+
+  const isCurrentSong = currentSong?.song_id === song.song_id;
+  const showPause = isCurrentSong && isPlaying;
+
   const formatDuration = (secs) => {
     const m = Math.floor(secs / 60);
     const s = secs % 60;
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
+  // FIX 1 + FIX 3: only the play button triggers playback
+  const handlePlayClick = (e) => {
+    e.stopPropagation();
+    if (showPause) {
+      pauseSong();
+    } else {
+      playSong(song);
+    }
+  };
+
+  // FIX 5: heart button — calls page's onToggleLike, does not manage state itself
+  const handleHeartClick = (e) => {
+    e.stopPropagation();
+    if (onToggleLike) onToggleLike(song);
+  };
+
+  const metaLine = buildMetaLine(song);
+
   return (
-    <div style={{ ...styles.card, ...(isActive ? styles.activeCard : {}) }}>
+    // FIX 3: no onClick on the card container
+    <div style={{ ...styles.card, ...(isCurrentSong ? styles.activeCard : {}) }}>
+      {/* Play / Pause button */}
       <div style={styles.left}>
         <button
-          onClick={() => onPlay(song)}
-          style={{ ...styles.playBtn, background: isActive ? '#e94560' : '#2a3a5a' }}
-          title="Play"
+          onClick={handlePlayClick}
+          style={{ ...styles.playBtn, background: isCurrentSong ? '#e94560' : '#2a3a5a' }}
+          title={showPause ? 'Pause' : 'Play'}
         >
-          {isActive ? '▶' : '▷'}
+          {showPause ? '⏸' : '▶'}
         </button>
       </div>
 
-      <div style={styles.info} onClick={() => onPlay(song)}>
+      {/* Song info — FIX 3: no onClick here */}
+      <div style={styles.info}>
+        {/* LINE 1: title */}
         <div style={styles.title}>{song.title}</div>
-        <div style={styles.meta}>
-          <span>{song.singer_name}</span>
-          <span style={styles.dot}>·</span>
-          <span>{song.language_name}</span>
-          <span style={styles.dot}>·</span>
-          <span>{song.genre_name}</span>
-          {song.movie_name && (
-            <>
-              <span style={styles.dot}>·</span>
-              <span style={styles.movie}>{song.movie_name}</span>
-            </>
-          )}
-        </div>
+
+        {/* LINE 2: singer · music_director · language · movie (FIX 4) */}
+        {metaLine && <div style={styles.meta}>{metaLine}</div>}
+
+        {/* LINE 3: mood pills — only moods, never genre (FIX 4) */}
         {song.moods && song.moods.length > 0 && (
           <div style={styles.moodRow}>
             {song.moods.map((m) => (
@@ -41,8 +75,18 @@ function SongCard({ song, onPlay, isActive }) {
         )}
       </div>
 
+      {/* Right section: heart + duration (FIX 5) */}
       <div style={styles.right}>
-        {song.is_liked && <span style={styles.likedBadge}>♥</span>}
+        <button
+          onClick={handleHeartClick}
+          style={{
+            ...styles.heartBtn,
+            color: song.is_liked ? '#e94560' : '#555',
+          }}
+          title={song.is_liked ? 'Unlike' : 'Like'}
+        >
+          {song.is_liked ? '♥' : '♡'}
+        </button>
         <span style={styles.duration}>{formatDuration(song.duration_seconds)}</span>
       </div>
     </div>
@@ -57,9 +101,8 @@ const styles = {
     padding: '12px 16px',
     background: '#16213e',
     borderRadius: 10,
-    cursor: 'pointer',
-    transition: 'background 0.15s',
     border: '1px solid transparent',
+    transition: 'background 0.15s',
   },
   activeCard: {
     background: '#1e2d50',
@@ -67,8 +110,8 @@ const styles = {
   },
   left: { flexShrink: 0 },
   playBtn: {
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     borderRadius: '50%',
     border: 'none',
     color: '#fff',
@@ -91,13 +134,10 @@ const styles = {
     fontSize: 12,
     color: '#aaa',
     marginTop: 3,
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: 4,
-    alignItems: 'center',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
   },
-  dot: { color: '#555' },
-  movie: { color: '#7a9cc0', fontStyle: 'italic' },
   moodRow: { display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 },
   moodTag: {
     fontSize: 10,
@@ -113,7 +153,20 @@ const styles = {
     alignItems: 'center',
     gap: 10,
   },
-  likedBadge: { color: '#e94560', fontSize: 14 },
+  // FIX 5: min 40×40 clickable heart button
+  heartBtn: {
+    background: 'none',
+    border: 'none',
+    fontSize: 18,
+    cursor: 'pointer',
+    padding: 0,
+    width: 40,
+    height: 40,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    lineHeight: 1,
+  },
   duration: { color: '#888', fontSize: 12, minWidth: 36, textAlign: 'right' },
 };
 
