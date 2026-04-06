@@ -128,6 +128,8 @@ def _seed_row(row: dict, db: Session) -> str:
     singer_name = row.get("singer", "").strip()
     if not singer_name:
         return "skipped"
+    # Take only the primary singer (Last.fm sometimes returns multiple comma-separated)
+    singer_name = singer_name.split(",")[0].strip()[:100]
     singer = _get_or_create_singer(singer_name, db)
 
     # music_director and actor are nullable — empty string → None
