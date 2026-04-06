@@ -1,22 +1,28 @@
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+import { PlayerProvider } from './context/PlayerContext';
+import Player from './components/Player';
 import HomePage from './pages/HomePage';
 import LikedSongsPage from './pages/LikedSongsPage';
 
 function App() {
   return (
-    <BrowserRouter>
-      <nav style={styles.nav}>
-        <Link to="/" style={styles.brand}>🎵 Smriti</Link>
-        <div style={styles.links}>
-          <Link to="/" style={styles.link}>Home</Link>
-          <Link to="/liked" style={styles.link}>♥ Liked</Link>
-        </div>
-      </nav>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/liked" element={<LikedSongsPage />} />
-      </Routes>
-    </BrowserRouter>
+    <PlayerProvider>
+      <BrowserRouter>
+        <nav style={styles.nav}>
+          <Link to="/" style={styles.brand}>🎵 Smriti</Link>
+          <div style={styles.links}>
+            <Link to="/" style={styles.link}>Home</Link>
+            <Link to="/liked" style={styles.link}>♥ Liked</Link>
+          </div>
+        </nav>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/liked" element={<LikedSongsPage />} />
+        </Routes>
+        {/* Single persistent player — lives outside Routes so it never unmounts */}
+        <Player />
+      </BrowserRouter>
+    </PlayerProvider>
   );
 }
 
