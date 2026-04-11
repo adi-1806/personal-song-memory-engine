@@ -328,25 +328,48 @@ def build_row(
 
 # ── Fetch strategies ───────────────────────────────────────────────────────────
 
+_RATE_LIMIT_CODE = 29
+_MAX_RETRIES = 3
+
+
+def _is_rate_limit(e: Exception) -> bool:
+    code = getattr(e, "error_code", None)
+    return code == _RATE_LIMIT_CODE or "rate limit" in str(e).lower()
+
+
 def fetch_by_tag(network: pylast.LastFMNetwork, tag_name: str) -> list[pylast.Track]:
-    try:
-        tag   = network.get_tag(tag_name)
-        items = tag.get_top_tracks(limit=TRACKS_PER_CALL)
-        return [i.item for i in items if i.item]
-    except Exception as e:
-        log.warning(f"    Tag '{tag_name}' failed: {e}")
-        return []
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            tag   = network.get_tag(tag_name)
+            items = tag.get_top_tracks(limit=TRACKS_PER_CALL)
+            return [i.item for i in items if i.item]
+        except Exception as e:
+            if _is_rate_limit(e) and attempt < _MAX_RETRIES:
+                log.warning("    Rate limit hit for tag '%s' — waiting 1s (attempt %d/%d)",
+                            tag_name, attempt, _MAX_RETRIES)
+                time.sleep(1)
+                continue
+            log.warning("    Tag '%s' failed: %s", tag_name, e)
+            return []
+    return []
 
 
 def fetch_by_artist(network: pylast.LastFMNetwork, artist_name: str) -> list[pylast.Track]:
-    try:
-        artist = network.get_artist(artist_name)
-        items  = artist.get_top_tracks(limit=30)
-        time.sleep(0.3)
-        return [i.item for i in items if i.item]
-    except Exception as e:
-        log.warning(f"    Artist '{artist_name}' failed: {e}")
-        return []
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            artist = network.get_artist(artist_name)
+            items  = artist.get_top_tracks(limit=30)
+            time.sleep(0.3)
+            return [i.item for i in items if i.item]
+        except Exception as e:
+            if _is_rate_limit(e) and attempt < _MAX_RETRIES:
+                log.warning("    Rate limit hit for artist '%s' — waiting 1s (attempt %d/%d)",
+                            artist_name, attempt, _MAX_RETRIES)
+                time.sleep(1)
+                continue
+            log.warning("    Artist '%s' failed: %s", artist_name, e)
+            return []
+    return []
 
 
 # ── Per-language pipeline ──────────────────────────────────────────────────────
@@ -356,8 +379,10 @@ def fetch_language(
     language: str,
     config: dict,
     seen: set[tuple],
-) -> list[dict]:
+) -> tuple[list[dict], int]:
+    """Returns (rows, failed_count)."""
     rows: list[dict] = []
+    failed = 0
     primary_tags = config["tags"]
     mood_subtags = config["moods"]
     artists      = config["artists"]
@@ -367,18 +392,23 @@ def fetch_language(
     log.info(f"{'═'*55}")
 
     def _add_tracks(tracks: list, subtag: str) -> int:
+        nonlocal failed
         added = 0
         for track in tracks:
             if len(rows) >= TARGET_PER_LANGUAGE:
                 break
-            key = (track.title.lower().strip(), track.artist.name.lower().strip())
-            if key in seen:
-                continue
-            seen.add(key)
-            row = build_row(track, language, subtag)
-            if row:
-                rows.append(row)
-                added += 1
+            try:
+                key = (track.title.lower().strip(), track.artist.name.lower().strip())
+                if key in seen:
+                    continue
+                seen.add(key)
+                row = build_row(track, language, subtag)
+                if row:
+                    rows.append(row)
+                    added += 1
+            except Exception as e:
+                log.warning("    Failed to process track '%s': %s", getattr(track, 'title', '?'), e)
+                failed += 1
         return added
 
     # ── Phase 1: primary language tags ────────────────────────────────────────
@@ -435,8 +465,8 @@ def fetch_language(
             added  = _add_tracks(tracks, "melody")
             log.info(f"       +{added} added  (total: {len(rows)})")
 
-    log.info(f"  ✓ {language}: {len(rows)} songs\n")
-    return rows[:TARGET_PER_LANGUAGE]
+    log.info(f"  ✓ {language}: {len(rows)} songs  (failed: {failed})\n")
+    return rows[:TARGET_PER_LANGUAGE], failed
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -444,19 +474,35 @@ def fetch_language(
 def main() -> None:
     if not API_KEY or not API_SECRET:
         raise SystemExit(
-            f"ERROR: LASTFM_API_KEY or LASTFM_API_SECRET not set.\n"
-            f"Loaded from: {_env_path}"
+            "ERROR: Invalid Last.fm API key.\n"
+            "Check LASTFM_API_KEY in your .env file.\n"
+            f"(Loaded from: {_env_path})"
         )
 
     log.info("Connecting to Last.fm…")
-    network = pylast.LastFMNetwork(api_key=API_KEY, api_secret=API_SECRET)
+    try:
+        network = pylast.LastFMNetwork(api_key=API_KEY, api_secret=API_SECRET)
+        # Validate key with a cheap test call
+        network.get_top_artists_chart(limit=1)
+    except pylast.WSError as e:
+        if "Invalid API key" in str(e) or "6" in str(getattr(e, "error_code", "")):
+            raise SystemExit(
+                "ERROR: Invalid Last.fm API key.\n"
+                "Check LASTFM_API_KEY in your .env file.\n"
+                f"Last.fm said: {e}"
+            )
+        log.warning("Last.fm auth check warning (non-fatal): %s", e)
+    except Exception as e:
+        log.warning("Could not validate Last.fm connection: %s", e)
 
     seen: set[tuple[str, str]] = set()
     all_rows: list[dict] = []
+    total_failed = 0
 
     for language, config in LANGUAGE_CONFIG.items():
-        rows = fetch_language(network, language, config, seen)
+        rows, failed = fetch_language(network, language, config, seen)
         all_rows.extend(rows)
+        total_failed += failed
 
     # ── Write CSV ──────────────────────────────────────────────────────────────
     OUTPUT_CSV.parent.mkdir(parents=True, exist_ok=True)
@@ -489,6 +535,9 @@ def main() -> None:
     for mood, count in mood_counts.most_common():
         bar = "█" * (count // 5)
         print(f"  {mood:<15} {count:>4}  {bar}")
+
+    if total_failed:
+        print(f"\n  Tracks failed (skipped): {total_failed}")
 
     print(f"\n✓ CSV written → {OUTPUT_CSV.resolve()}")
     print(f"\nNext steps:")

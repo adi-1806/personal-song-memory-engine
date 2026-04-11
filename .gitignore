@@ -23,5 +23,8 @@ pgdata/
 # Airflow logs
 airflow_logs/
 
+# Backend rotating logs
+logs/
+
 # macOS
 .DS_Store

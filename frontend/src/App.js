@@ -1,26 +1,61 @@
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, NavLink } from 'react-router-dom';
 import { PlayerProvider } from './context/PlayerContext';
 import Player from './components/Player';
 import HomePage from './pages/HomePage';
 import LikedSongsPage from './pages/LikedSongsPage';
+import './mobile.css';
 
 function App() {
   return (
     <PlayerProvider>
       <BrowserRouter>
-        <nav style={styles.nav}>
+        {/* Desktop top nav — .top-nav CSS hides this on mobile */}
+        <nav className="top-nav" style={styles.nav}>
           <Link to="/" style={styles.brand}>🎵 Smriti</Link>
           <div style={styles.links}>
-            <Link to="/" style={styles.link}>Home</Link>
-            <Link to="/liked" style={styles.link}>♥ Liked</Link>
+            <NavLink
+              to="/"
+              end
+              style={({ isActive }) => ({ ...styles.link, color: isActive ? '#e94560' : '#aaa' })}
+            >
+              Home
+            </NavLink>
+            <NavLink
+              to="/liked"
+              style={({ isActive }) => ({ ...styles.link, color: isActive ? '#e94560' : '#aaa' })}
+            >
+              ♥ Liked
+            </NavLink>
           </div>
         </nav>
+
+        {/* Page routes */}
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/liked" element={<LikedSongsPage />} />
         </Routes>
+
         {/* Single persistent player — lives outside Routes so it never unmounts */}
         <Player />
+
+        {/* Mobile bottom tab bar — .bottom-tab-bar CSS hides this on desktop */}
+        <nav className="bottom-tab-bar" aria-label="Mobile navigation">
+          <NavLink
+            to="/"
+            end
+            className={({ isActive }) => `tab-item${isActive ? ' active' : ''}`}
+          >
+            <span className="tab-icon">🏠</span>
+            <span className="tab-label">Home</span>
+          </NavLink>
+          <NavLink
+            to="/liked"
+            className={({ isActive }) => `tab-item${isActive ? ' active' : ''}`}
+          >
+            <span className="tab-icon">♥</span>
+            <span className="tab-label">Liked</span>
+          </NavLink>
+        </nav>
       </BrowserRouter>
     </PlayerProvider>
   );
@@ -28,7 +63,7 @@ function App() {
 
 const styles = {
   nav: {
-    display: 'flex',
+    /* display is controlled by .top-nav class in mobile.css — do not set here */
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '12px 24px',
@@ -45,7 +80,7 @@ const styles = {
     textDecoration: 'none',
   },
   links: { display: 'flex', gap: 24 },
-  link: { color: '#aaa', textDecoration: 'none', fontSize: 14 },
+  link: { textDecoration: 'none', fontSize: 14 },
 };
 
 export default App;

@@ -20,13 +20,14 @@ function HomePage() {
   }, [setPlayerSongs]);
 
   const loadAllSongs = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await getAllSongs();
-      applyAndStore(res.data);
+      const data = await getAllSongs();
+      applyAndStore(data || []);
       setError(null);
-    } catch (e) {
-      console.error('Failed to load songs', e);
-      setError('Could not connect to backend. Is it running on port 8000?');
+    } catch (err) {
+      console.error('Failed to load songs', err);
+      setError(err.message || 'Failed to load songs. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -39,11 +40,12 @@ function HomePage() {
     if (!q && !activeMood) { loadAllSongs(); return; }
     setLoading(true);
     try {
-      const res = await searchSongs(q, '', '', activeMood || '');
-      applyAndStore(res.data);
+      const data = await searchSongs(q, '', '', activeMood || '');
+      applyAndStore(data || []);
       setError(null);
-    } catch (e) {
-      console.error('Search failed', e);
+    } catch (err) {
+      console.error('Search failed', err);
+      setError(err.message || 'Search failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -58,16 +60,20 @@ function HomePage() {
     setActiveMood(mood);
     setLoading(true);
     try {
-      const res = await searchSongs('', '', '', mood || '');
-      applyAndStore(res.data);
-    } catch (e) {
-      console.error('Mood filter failed', e);
+      const data = await searchSongs('', '', '', mood || '');
+      applyAndStore(data || []);
+      setError(null);
+    } catch (err) {
+      console.error('Mood filter failed', err);
+      setError(err.message || 'Failed to filter by mood. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // FIX 5: toggle like without refetching the full song list
+  // FIX 5: toggle like without refetching the full song list.
+  // Re-throws on error so SongCard can display a toast and the icon reverts
+  // (state is only updated on success, so no explicit revert needed).
   const handleToggleLike = async (song) => {
     try {
       if (song.is_liked) {
@@ -76,19 +82,17 @@ function HomePage() {
         await likeSong(song.song_id);
       }
       const updated = { ...song, is_liked: !song.is_liked };
-      // Update local render list
       setSongs((prev) => prev.map((s) => (s.song_id === song.song_id ? updated : s)));
-      // Update Player's skip list
       setPlayerSongs((prev) => prev.map((s) => (s.song_id === song.song_id ? updated : s)));
-      // Keep bottom player's currentSong in sync
       updateCurrentSong(updated);
-    } catch (e) {
-      console.error('Like toggle failed', e);
+    } catch (err) {
+      console.error('Like toggle failed', err);
+      throw err; // re-throw so SongCard shows its error toast
     }
   };
 
   return (
-    <div style={styles.page}>
+    <div className="page-container" style={styles.page}>
       {/* Search */}
       <section style={styles.section}>
         <SearchBar onSearch={handleSearch} onClear={handleClear} />
@@ -101,18 +105,26 @@ function HomePage() {
       </section>
 
       {/* Songs list */}
-      <section style={{ ...styles.section, paddingBottom: 100 }}>
+      <section style={styles.section}>
         <h2 style={styles.sectionTitle}>
           {activeMood ? `${activeMood} songs` : 'All Songs'}
           {' '}
           <span style={styles.count}>({songs.length})</span>
         </h2>
 
-        {error && <div style={styles.error}>{error}</div>}
+        {error && (
+          <div style={styles.error}>
+            {error}
+            <button onClick={loadAllSongs} style={styles.retryBtn}>Retry</button>
+          </div>
+        )}
 
         {loading ? (
-          <div style={styles.loading}>Loading…</div>
-        ) : songs.length === 0 ? (
+          <div style={styles.loading}>
+            <span style={styles.spinner} />
+            Loading…
+          </div>
+        ) : songs.length === 0 && !error ? (
           <div style={styles.empty}>No songs found.</div>
         ) : (
           <div style={styles.list}>
@@ -134,7 +146,7 @@ const styles = {
   page: {
     maxWidth: 860,
     margin: '0 auto',
-    padding: '24px 20px',
+    /* padding handled by .page-container class in mobile.css */
   },
   section: { marginBottom: 32 },
   sectionTitle: {
@@ -145,7 +157,16 @@ const styles = {
   },
   count: { fontSize: 13, color: '#666', fontWeight: 400 },
   list: { display: 'flex', flexDirection: 'column', gap: 8 },
-  loading: { color: '#666', padding: '20px 0' },
+  loading: { color: '#666', padding: '20px 0', display: 'flex', alignItems: 'center', gap: 8 },
+  spinner: {
+    display: 'inline-block',
+    width: 14,
+    height: 14,
+    border: '2px solid #444',
+    borderTopColor: '#e94560',
+    borderRadius: '50%',
+    animation: 'spin 0.8s linear infinite',
+  },
   empty: { color: '#555', padding: '20px 0' },
   error: {
     color: '#e94560',
@@ -154,6 +175,20 @@ const styles = {
     borderRadius: 8,
     marginBottom: 16,
     fontSize: 14,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  retryBtn: {
+    background: '#e94560',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 6,
+    padding: '6px 14px',
+    fontSize: 13,
+    cursor: 'pointer',
+    flexShrink: 0,
   },
 };
 

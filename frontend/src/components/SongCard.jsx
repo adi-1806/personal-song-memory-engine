@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 
 // FIX 4 helper — builds meta line with no nulls and no duplicate values
@@ -15,6 +16,7 @@ function buildMetaLine(song) {
 
 function SongCard({ song, onToggleLike }) {
   const { currentSong, isPlaying, playSong, pauseSong } = usePlayer();
+  const [toast, setToast] = useState(null);
 
   const isCurrentSong = currentSong?.song_id === song.song_id;
   const showPause = isCurrentSong && isPlaying;
@@ -35,10 +37,19 @@ function SongCard({ song, onToggleLike }) {
     }
   };
 
-  // FIX 5: heart button — calls page's onToggleLike, does not manage state itself
-  const handleHeartClick = (e) => {
+  // FIX 5: async heart — catches failures, reverts state (via no-update on error),
+  // shows a brief toast
+  const handleHeartClick = async (e) => {
     e.stopPropagation();
-    if (onToggleLike) onToggleLike(song);
+    if (!onToggleLike) return;
+    try {
+      await onToggleLike(song);
+    } catch {
+      // onToggleLike throws on network/server error — state was NOT updated by caller,
+      // so the icon automatically reverts. Just show the toast.
+      setToast('Could not update. Try again.');
+      setTimeout(() => setToast(null), 3000);
+    }
   };
 
   const metaLine = buildMetaLine(song);
@@ -50,6 +61,7 @@ function SongCard({ song, onToggleLike }) {
       <div style={styles.left}>
         <button
           onClick={handlePlayClick}
+          className="song-play-button"
           style={{ ...styles.playBtn, background: isCurrentSong ? '#e94560' : '#2a3a5a' }}
           title={showPause ? 'Pause' : 'Play'}
         >
@@ -57,28 +69,32 @@ function SongCard({ song, onToggleLike }) {
         </button>
       </div>
 
-      {/* Song info — FIX 3: no onClick here */}
+      {/* Song info */}
       <div style={styles.info}>
-        {/* LINE 1: title */}
-        <div style={styles.title}>{song.title}</div>
+        {/* LINE 1: title — 2-line clamp on mobile */}
+        <div className="song-title-clamp" style={styles.title}>{song.title}</div>
 
-        {/* LINE 2: singer · music_director · language · movie (FIX 4) */}
+        {/* LINE 2: singer · music_director · language · movie */}
         {metaLine && <div style={styles.meta}>{metaLine}</div>}
 
-        {/* LINE 3: mood pills — only moods, never genre (FIX 4) */}
+        {/* LINE 3: mood pills — horizontal scroll if overflow */}
         {song.moods && song.moods.length > 0 && (
-          <div style={styles.moodRow}>
+          <div className="song-mood-scroll">
             {song.moods.map((m) => (
               <span key={m} style={styles.moodTag}>{m}</span>
             ))}
           </div>
         )}
+
+        {/* Error toast — shown briefly on like/dislike failure */}
+        {toast && <div style={styles.toast}>{toast}</div>}
       </div>
 
-      {/* Right section: heart + duration (FIX 5) */}
+      {/* Right section: heart + duration */}
       <div style={styles.right}>
         <button
           onClick={handleHeartClick}
+          className="song-heart-button"
           style={{
             ...styles.heartBtn,
             color: song.is_liked ? '#e94560' : '#555',
@@ -110,8 +126,8 @@ const styles = {
   },
   left: { flexShrink: 0 },
   playBtn: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: '50%',
     border: 'none',
     color: '#fff',
@@ -126,9 +142,6 @@ const styles = {
     fontSize: 15,
     fontWeight: 600,
     color: '#eee',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
   },
   meta: {
     fontSize: 12,
@@ -138,7 +151,6 @@ const styles = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
   },
-  moodRow: { display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 },
   moodTag: {
     fontSize: 10,
     padding: '2px 7px',
@@ -146,6 +158,13 @@ const styles = {
     borderRadius: 10,
     color: '#888',
     border: '1px solid #2a2a4a',
+    flexShrink: 0,
+    whiteSpace: 'nowrap',
+  },
+  toast: {
+    marginTop: 4,
+    fontSize: 11,
+    color: '#e94560',
   },
   right: {
     flexShrink: 0,
@@ -153,15 +172,14 @@ const styles = {
     alignItems: 'center',
     gap: 10,
   },
-  // FIX 5: min 40×40 clickable heart button
   heartBtn: {
     background: 'none',
     border: 'none',
     fontSize: 18,
     cursor: 'pointer',
     padding: 0,
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

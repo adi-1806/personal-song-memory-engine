@@ -18,13 +18,15 @@ const MOODS = [
 
 function MoodSelector({ activeMood, onMoodSelect }) {
   return (
-    <div style={styles.grid}>
+    // .mood-grid-wrap controls display (grid on mobile, flex on desktop)
+    <div className="mood-grid-wrap">
       {MOODS.map(({ name, emoji }) => {
         const isActive = activeMood === name;
         return (
           <button
             key={name}
             onClick={() => onMoodSelect(isActive ? null : name)}
+            className="mood-card-btn"
             style={{
               ...styles.card,
               ...(isActive ? styles.activeCard : {}),
@@ -40,11 +42,6 @@ function MoodSelector({ activeMood, onMoodSelect }) {
 }
 
 const styles = {
-  grid: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
   card: {
     display: 'flex',
     flexDirection: 'column',

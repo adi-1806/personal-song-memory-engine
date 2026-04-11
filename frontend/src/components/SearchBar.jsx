@@ -28,13 +28,14 @@ function SearchBar({ onSearch, onClear }) {
           value={query}
           onChange={handleChange}
           placeholder="Search by song, singer, genre, mood, language…"
+          className="search-input-field"
           style={styles.input}
         />
         {query && (
           <button type="button" onClick={handleClear} style={styles.clearBtn}>✕</button>
         )}
       </div>
-      <button type="submit" style={styles.searchBtn}>Search</button>
+      <button type="submit" className="search-submit-btn" style={styles.searchBtn}>Search</button>
     </form>
   );
 }
@@ -44,7 +45,6 @@ const styles = {
     display: 'flex',
     gap: 10,
     width: '100%',
-    maxWidth: 700,
   },
   inputWrap: {
     flex: 1,
@@ -62,7 +62,7 @@ const styles = {
     border: 'none',
     outline: 'none',
     color: '#eee',
-    fontSize: 15,
+    /* font-size set by .search-input-field class (16px, prevents iOS zoom) */
     padding: '12px 0',
   },
   clearBtn: {
@@ -72,6 +72,11 @@ const styles = {
     cursor: 'pointer',
     fontSize: 14,
     padding: '0 4px',
+    minWidth: 44,
+    minHeight: 44,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   searchBtn: {
     background: '#e94560',
@@ -79,9 +84,10 @@ const styles = {
     border: 'none',
     borderRadius: 8,
     padding: '12px 22px',
-    fontSize: 14,
+    fontSize: 16,
     cursor: 'pointer',
     fontWeight: 600,
+    /* min-height set by .search-submit-btn class (48px) */
   },
 };
 

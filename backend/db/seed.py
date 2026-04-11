@@ -8,12 +8,18 @@ Seeding order:
 Skip logic: a song is skipped if its audio_file_path already exists in the DB.
 This prevents duplicates when the script is re-run.
 
+Per-row error handling: if one song fails, it is logged and skipped.
+The seed never aborts because of a single bad row.
+
+Summary printed at end:
+  Seeded: 8, Skipped: 2, Failed: 1
+  Failed rows: ['bad_title']
+
 Run inside the backend container:
   docker exec smriti_backend python -m backend.db.seed
 """
 import csv
 import logging
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -106,6 +112,7 @@ def _seed_row(row: dict, db: Session) -> str:
     """
     Insert one song row. Returns 'seeded' or 'skipped'.
     Skip condition: audio_file_path already exists in DB.
+    Raises on unexpected DB errors — caller handles per-row try/except.
     """
     audio_path = row.get("audio_file_path", "").strip()
     if not audio_path:
@@ -186,43 +193,64 @@ def _seed_row(row: dict, db: Session) -> str:
 
 # ── Main seeder ───────────────────────────────────────────────────────────────
 
-def seed_csv(filepath: Path, db: Session) -> tuple[int, int]:
-    """Seed all rows from one CSV. Returns (seeded_count, skipped_count)."""
+def seed_csv(filepath: Path, db: Session) -> tuple[int, int, int, list[str]]:
+    """Seed all rows from one CSV. Returns (seeded, skipped, failed, failed_titles).
+
+    Per-row try/except: a single bad row is logged and skipped.
+    The seed never aborts because of one bad row.
+    """
     if not filepath.exists():
         logger.info("File not found, skipping: %s", filepath)
-        return 0, 0
+        return 0, 0, 0, []
 
     rows = load_csv(filepath)
-    seeded = skipped = 0
-    for row in rows:
-        result = _seed_row(row, db)
-        if result == "seeded":
-            seeded += 1
-        else:
-            skipped += 1
+    seeded = skipped = failed = 0
+    failed_titles: list[str] = []
 
-    return seeded, skipped
+    for row in rows:
+        title = row.get("title", "<unknown>").strip()
+        try:
+            result = _seed_row(row, db)
+            if result == "seeded":
+                seeded += 1
+            else:
+                skipped += 1
+        except Exception as e:
+            logger.error("Failed to seed row '%s': %s", title, e, exc_info=True)
+            failed += 1
+            failed_titles.append(title)
+            db.rollback()  # roll back this row's partial work only
+
+    return seeded, skipped, failed, failed_titles
 
 
 def seed() -> None:
     db: Session = SessionLocal()
     try:
-        total_seeded = total_skipped = 0
+        total_seeded = total_skipped = total_failed = 0
+        all_failed: list[str] = []
 
         # 1 — Always seed our 8 hand-curated songs first
-        s, k = seed_csv(PRIMARY_CSV, db)
+        s, k, f, ft = seed_csv(PRIMARY_CSV, db)
         total_seeded += s
         total_skipped += k
-        logger.info("songs.csv → seeded %d, skipped %d", s, k)
+        total_failed += f
+        all_failed.extend(ft)
+        logger.info("songs.csv → seeded %d, skipped %d, failed %d", s, k, f)
 
         # 2 — Seed Last.fm songs if the file exists
-        s, k = seed_csv(LASTFM_CSV, db)
+        s, k, f, ft = seed_csv(LASTFM_CSV, db)
         total_seeded += s
         total_skipped += k
+        total_failed += f
+        all_failed.extend(ft)
         if LASTFM_CSV.exists():
-            logger.info("lastfm_songs.csv → seeded %d, skipped %d", s, k)
+            logger.info("lastfm_songs.csv → seeded %d, skipped %d, failed %d", s, k, f)
 
-        print(f"\nSeeding complete: seeded {total_seeded} new songs, skipped {total_skipped} existing.\n")
+        print(f"\nSeeded: {total_seeded}, Skipped: {total_skipped}, Failed: {total_failed}")
+        if all_failed:
+            print(f"Failed rows: {all_failed}")
+        print()
 
     finally:
         db.close()

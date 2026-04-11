@@ -15,26 +15,42 @@ export function PlayerProvider({ children }) {
   const [songs, setSongs] = useState([]);   // kept for skip next/prev
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [playError, setPlayError] = useState(null);
 
   // Always-fresh snapshot for use inside stable callbacks
   const latestRef = useRef({ currentSong, songs });
   useEffect(() => { latestRef.current = { currentSong, songs }; });
 
-  // ── Core playback ─────────────────────────────────────────────────────────
+  // ── Core playback ─────────────────────────────────────────────────────────────
+
+  const clearPlayError = useCallback(() => setPlayError(null), []);
 
   const playSong = useCallback((song) => {
     if (!song) return;
+    setPlayError(null); // clear any previous error on new play attempt
     const audio = audioRef.current;
     if (latestRef.current.currentSong?.song_id === song.song_id) {
       // Same song — just resume
-      audio.play().then(() => setIsPlaying(true)).catch(() => {});
+      audio.play()
+        .then(() => setIsPlaying(true))
+        .catch((err) => {
+          console.error('[Player] Resume failed:', err);
+          setPlayError('Could not play this song. Audio file may be missing.');
+          setIsPlaying(false);
+        });
     } else {
       audio.src = getStreamUrl(song.song_id);
       audio.load();
       setProgress(0);
       setDuration(0);
       setCurrentSong(song);
-      audio.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+      audio.play()
+        .then(() => setIsPlaying(true))
+        .catch((err) => {
+          console.error('[Player] Playback failed:', err);
+          setPlayError('Could not play this song. Audio file may be missing.');
+          setIsPlaying(false);
+        });
     }
   }, []);
 
@@ -47,14 +63,19 @@ export function PlayerProvider({ children }) {
     const audio = audioRef.current;
     if (!latestRef.current.currentSong) return;
     if (audio.paused) {
-      audio.play().then(() => setIsPlaying(true)).catch(() => {});
+      audio.play()
+        .then(() => setIsPlaying(true))
+        .catch((err) => {
+          console.error('[Player] Toggle-play failed:', err);
+          setPlayError('Could not play this song. Audio file may be missing.');
+        });
     } else {
       audio.pause();
       setIsPlaying(false);
     }
   }, []);
 
-  // ── Skip ─────────────────────────────────────────────────────────────────
+  // ── Skip ─────────────────────────────────────────────────────────────────────
 
   const skipNext = useCallback(() => {
     const { songs: s, currentSong: cur } = latestRef.current;
@@ -76,7 +97,7 @@ export function PlayerProvider({ children }) {
     }
   }, [playSong]);
 
-  // ── Seek ─────────────────────────────────────────────────────────────────
+  // ── Seek ─────────────────────────────────────────────────────────────────────
 
   const seek = useCallback((e) => {
     const audio = audioRef.current;
@@ -88,7 +109,7 @@ export function PlayerProvider({ children }) {
     setProgress(newTime);
   }, []);
 
-  // ── Like / dislike for the bottom Player bar ──────────────────────────────
+  // ── Like / dislike for the bottom Player bar ──────────────────────────────────
 
   const likeCurrentSong = useCallback(async () => {
     const cur = latestRef.current.currentSong;
@@ -96,7 +117,9 @@ export function PlayerProvider({ children }) {
     try {
       await likeSong(cur.song_id);
       setCurrentSong((prev) => (prev ? { ...prev, is_liked: true } : prev));
-    } catch (e) {}
+    } catch (e) {
+      console.error('[Player] Like failed:', e);
+    }
   }, []);
 
   const dislikeCurrentSong = useCallback(async () => {
@@ -105,10 +128,12 @@ export function PlayerProvider({ children }) {
     try {
       await dislikeSong(cur.song_id);
       setCurrentSong((prev) => (prev ? { ...prev, is_liked: false } : prev));
-    } catch (e) {}
+    } catch (e) {
+      console.error('[Player] Dislike failed:', e);
+    }
   }, []);
 
-  // ── Sync helper — pages call this after liking from a card ────────────────
+  // ── Sync helper — pages call this after liking from a card ────────────────────
 
   const updateCurrentSong = useCallback((partial) => {
     setCurrentSong((prev) =>
@@ -116,20 +141,29 @@ export function PlayerProvider({ children }) {
     );
   }, []);
 
-  // ── Audio event listeners ─────────────────────────────────────────────────
+  // ── Audio event listeners (including onerror) ─────────────────────────────────
 
   useEffect(() => {
     const audio = audioRef.current;
     const onTime = () => setProgress(audio.currentTime);
     const onMeta = () => setDuration(audio.duration);
     const onEnded = () => skipNext();
+    const onError = () => {
+      console.error('[Player] Audio element error — src:', audio.src);
+      setPlayError('Playback failed. The audio file may be missing.');
+      setIsPlaying(false);
+    };
+
     audio.addEventListener('timeupdate', onTime);
     audio.addEventListener('loadedmetadata', onMeta);
     audio.addEventListener('ended', onEnded);
+    audio.addEventListener('error', onError);
+
     return () => {
       audio.removeEventListener('timeupdate', onTime);
       audio.removeEventListener('loadedmetadata', onMeta);
       audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('error', onError);
     };
   }, [skipNext]);
 
@@ -140,6 +174,7 @@ export function PlayerProvider({ children }) {
         isPlaying,
         progress,
         duration,
+        playError,
         songs,
         setSongs,
         playSong,
@@ -151,6 +186,7 @@ export function PlayerProvider({ children }) {
         likeCurrentSong,
         dislikeCurrentSong,
         updateCurrentSong,
+        clearPlayError,
       }}
     >
       {children}

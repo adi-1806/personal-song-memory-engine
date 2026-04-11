@@ -5,6 +5,7 @@ function Player() {
     currentSong, isPlaying, progress, duration,
     togglePlay, skipNext, skipPrev, seek,
     likeCurrentSong, dislikeCurrentSong,
+    playError, clearPlayError,
   } = usePlayer();
 
   const fmt = (secs) => {
@@ -15,89 +16,169 @@ function Player() {
   };
 
   const pct = duration ? (progress / duration) * 100 : 0;
+  const likeColor = currentSong?.is_liked ? '#e94560' : '#555';
 
   return (
-    <div style={styles.player}>
-      {/* Song info */}
-      <div style={styles.songInfo}>
-        {currentSong ? (
-          <>
-            <div style={styles.title}>{currentSong.title}</div>
-            <div style={styles.singer}>
-              {currentSong.singer_name} · {currentSong.language_name}
-            </div>
-          </>
-        ) : (
-          <div style={styles.empty}>No song selected</div>
-        )}
-      </div>
+    <div className="player-bar">
 
-      {/* Controls */}
-      <div style={styles.center}>
-        <div style={styles.controls}>
-          <button onClick={skipPrev} style={styles.ctrlBtn} title="Previous">⏮</button>
+      {/* ── Playback error banner (both layouts) ─────────────── */}
+      {playError && (
+        <div style={errorBannerStyle}>
+          <span>{playError}</span>
+          <button onClick={clearPlayError} style={errorDismissStyle}>✕</button>
+        </div>
+      )}
+
+      {/* ── Mobile layout (hidden on desktop via CSS) ─────── */}
+      <div className="player-mobile-inner">
+
+        {/* ROW 1: Song title + singer */}
+        <div className="player-row-1">
+          {currentSong ? (
+            <>
+              <div className="player-song-title-m">{currentSong.title}</div>
+              <div className="player-song-singer-m">
+                {currentSong.singer_name} · {currentSong.language_name}
+              </div>
+            </>
+          ) : (
+            <div className="player-empty-m">No song selected</div>
+          )}
+        </div>
+
+        {/* ROW 2: Progress bar (full width) */}
+        <div className="player-row-2">
+          <div className="player-progress-bar-m" onClick={seek} title="Seek">
+            <div className="player-progress-fill" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+
+        {/* ROW 3: [Skip prev] [Play/Pause] [Skip next] [Heart] [Dislike] [Time] */}
+        <div className="player-row-3">
           <button
+            className="player-ctrl-btn-m"
+            onClick={skipPrev}
+            title="Previous"
+          >⏮</button>
+          <button
+            className="player-play-btn-m"
             onClick={togglePlay}
-            style={styles.playBtn}
-            title={isPlaying ? 'Pause' : 'Play'}
             disabled={!currentSong}
+            title={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? '⏸' : '▶'}
           </button>
-          <button onClick={skipNext} style={styles.ctrlBtn} title="Next">⏭</button>
-        </div>
-
-        {/* Progress bar */}
-        <div style={styles.progressRow}>
-          <span style={styles.time}>{fmt(progress)}</span>
-          <div style={styles.progressBar} onClick={seek} title="Seek">
-            <div style={{ ...styles.progressFill, width: `${pct}%` }} />
-          </div>
-          <span style={styles.time}>{fmt(duration)}</span>
+          <button
+            className="player-ctrl-btn-m"
+            onClick={skipNext}
+            title="Next"
+          >⏭</button>
+          <button
+            className="player-like-btn-m"
+            onClick={likeCurrentSong}
+            disabled={!currentSong}
+            style={{ color: likeColor }}
+            title="Like"
+          >♥</button>
+          <button
+            className="player-ctrl-btn-m"
+            onClick={dislikeCurrentSong}
+            disabled={!currentSong}
+            title="Dislike"
+          >✕</button>
+          <span className="player-time-m">
+            {fmt(progress)} / {fmt(duration)}
+          </span>
         </div>
       </div>
 
-      {/* Like / Dislike */}
-      <div style={styles.likeSection}>
-        <button
-          onClick={likeCurrentSong}
-          style={{
-            ...styles.likeBtn,
-            color: currentSong?.is_liked ? '#e94560' : '#555',
-          }}
-          title="Like"
-          disabled={!currentSong}
-        >
-          ♥
-        </button>
-        <button
-          onClick={dislikeCurrentSong}
-          style={styles.likeBtn}
-          title="Dislike"
-          disabled={!currentSong}
-        >
-          ✕
-        </button>
+      {/* ── Desktop layout (hidden on mobile via CSS) ─────── */}
+      <div className="player-desktop-inner">
+
+        {/* Song info */}
+        <div style={desktopStyles.songInfo}>
+          {currentSong ? (
+            <>
+              <div style={desktopStyles.title}>{currentSong.title}</div>
+              <div style={desktopStyles.singer}>
+                {currentSong.singer_name} · {currentSong.language_name}
+              </div>
+            </>
+          ) : (
+            <div style={desktopStyles.empty}>No song selected</div>
+          )}
+        </div>
+
+        {/* Center: controls + progress bar */}
+        <div style={desktopStyles.center}>
+          <div style={desktopStyles.controls}>
+            <button onClick={skipPrev} style={desktopStyles.ctrlBtn} title="Previous">⏮</button>
+            <button
+              onClick={togglePlay}
+              style={desktopStyles.playBtn}
+              disabled={!currentSong}
+              title={isPlaying ? 'Pause' : 'Play'}
+            >
+              {isPlaying ? '⏸' : '▶'}
+            </button>
+            <button onClick={skipNext} style={desktopStyles.ctrlBtn} title="Next">⏭</button>
+          </div>
+          <div style={desktopStyles.progressRow}>
+            <span style={desktopStyles.time}>{fmt(progress)}</span>
+            <div style={desktopStyles.progressBar} onClick={seek} title="Seek">
+              <div style={{ ...desktopStyles.progressFill, width: `${pct}%` }} />
+            </div>
+            <span style={desktopStyles.time}>{fmt(duration)}</span>
+          </div>
+        </div>
+
+        {/* Like / Dislike */}
+        <div style={desktopStyles.likeSection}>
+          <button
+            onClick={likeCurrentSong}
+            style={{ ...desktopStyles.likeBtn, color: likeColor }}
+            disabled={!currentSong}
+            title="Like"
+          >♥</button>
+          <button
+            onClick={dislikeCurrentSong}
+            style={desktopStyles.likeBtn}
+            disabled={!currentSong}
+            title="Dislike"
+          >✕</button>
+        </div>
       </div>
     </div>
   );
 }
 
-const styles = {
-  player: {
-    position: 'fixed',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 20,
-    padding: '10px 24px',
-    background: '#0d1b35',
-    borderTop: '1px solid #2a3a5a',
-    zIndex: 200,
-    minHeight: 72,
-  },
+const errorBannerStyle = {
+  position: 'absolute',
+  top: -38,
+  left: 0,
+  right: 0,
+  background: '#3a0a18',
+  borderTop: '1px solid #e94560',
+  color: '#e94560',
+  fontSize: 13,
+  padding: '6px 16px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 8,
+};
+
+const errorDismissStyle = {
+  background: 'none',
+  border: 'none',
+  color: '#e94560',
+  cursor: 'pointer',
+  fontSize: 14,
+  padding: 0,
+  flexShrink: 0,
+};
+
+const desktopStyles = {
   songInfo: { width: 220, flexShrink: 0 },
   title: {
     fontSize: 14,
@@ -117,12 +198,16 @@ const styles = {
     color: '#aaa',
     fontSize: 18,
     cursor: 'pointer',
-    padding: 4,
+    minWidth: 44,
+    minHeight: 44,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     lineHeight: 1,
   },
   playBtn: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: '50%',
     background: '#e94560',
     border: 'none',
@@ -162,7 +247,11 @@ const styles = {
     color: '#555',
     fontSize: 20,
     cursor: 'pointer',
-    padding: 4,
+    minWidth: 44,
+    minHeight: 44,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 };
 

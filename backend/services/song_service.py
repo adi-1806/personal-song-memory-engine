@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from backend.models.song import Song, SongLike, SongMood
@@ -54,16 +55,26 @@ def _load_full(db: Session):
 
 
 def get_all(db: Session) -> list:
-    songs = _load_full(db).all()
-    logger.info("get_all: returned %d songs", len(songs))
-    return [_to_song_response(s) for s in songs]
+    try:
+        songs = _load_full(db).all()
+        logger.info("get_all: returned %d songs", len(songs))
+        return [_to_song_response(s) for s in songs]
+    except SQLAlchemyError as e:
+        logger.error("DB error in get_all: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Database error while fetching songs")
 
 
 def get_by_id(song_id: int, db: Session) -> dict:
-    song = _load_full(db).filter(Song.song_id == song_id).first()
-    if not song:
-        raise HTTPException(status_code=404, detail="Song not found")
-    return _to_song_response(song)
+    try:
+        song = _load_full(db).filter(Song.song_id == song_id).first()
+        if not song:
+            raise HTTPException(status_code=404, detail="Song not found")
+        return _to_song_response(song)
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error("DB error in get_by_id song_id=%d: %s", song_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Database error while fetching song")
 
 
 def search(
@@ -73,62 +84,70 @@ def search(
     mood: Optional[str],
     db: Session,
 ) -> list:
-    # Find matching song_ids via joins (avoids eager-load alias conflicts)
-    id_query = db.query(Song.song_id).distinct()
+    try:
+        # Find matching song_ids via joins (avoids eager-load alias conflicts)
+        id_query = db.query(Song.song_id).distinct()
 
-    if q or language or genre or mood:
-        id_query = (
-            id_query.outerjoin(Singer, Song.singer_id == Singer.singer_id)
-            .outerjoin(Language, Song.language_id == Language.language_id)
-            .outerjoin(Genre, Song.genre_id == Genre.genre_id)
-            .outerjoin(SongMood, Song.song_id == SongMood.song_id)
-            .outerjoin(Mood, SongMood.mood_id == Mood.mood_id)
-        )
-
-    if q:
-        id_query = id_query.filter(
-            or_(
-                Song.title.ilike(f"%{q}%"),
-                Singer.singer_name.ilike(f"%{q}%"),
-                Genre.genre_name.ilike(f"%{q}%"),
-                Mood.mood_name.ilike(f"%{q}%"),
-                Language.language_name.ilike(f"%{q}%"),
-                Song.movie_name.ilike(f"%{q}%"),
+        if q or language or genre or mood:
+            id_query = (
+                id_query.outerjoin(Singer, Song.singer_id == Singer.singer_id)
+                .outerjoin(Language, Song.language_id == Language.language_id)
+                .outerjoin(Genre, Song.genre_id == Genre.genre_id)
+                .outerjoin(SongMood, Song.song_id == SongMood.song_id)
+                .outerjoin(Mood, SongMood.mood_id == Mood.mood_id)
             )
-        )
-    if language:
-        id_query = id_query.filter(Language.language_name.ilike(f"%{language}%"))
-    if genre:
-        id_query = id_query.filter(Genre.genre_name.ilike(f"%{genre}%"))
-    if mood:
-        id_query = id_query.filter(Mood.mood_name.ilike(f"%{mood}%"))
 
-    matching_ids = [row[0] for row in id_query.all()]
+        if q:
+            id_query = id_query.filter(
+                or_(
+                    Song.title.ilike(f"%{q}%"),
+                    Singer.singer_name.ilike(f"%{q}%"),
+                    Genre.genre_name.ilike(f"%{q}%"),
+                    Mood.mood_name.ilike(f"%{q}%"),
+                    Language.language_name.ilike(f"%{q}%"),
+                    Song.movie_name.ilike(f"%{q}%"),
+                )
+            )
+        if language:
+            id_query = id_query.filter(Language.language_name.ilike(f"%{language}%"))
+        if genre:
+            id_query = id_query.filter(Genre.genre_name.ilike(f"%{genre}%"))
+        if mood:
+            id_query = id_query.filter(Mood.mood_name.ilike(f"%{mood}%"))
 
-    songs = (
-        db.query(Song)
-        .options(
-            joinedload(Song.singer),
-            joinedload(Song.language),
-            joinedload(Song.genre),
-            selectinload(Song.song_moods).joinedload(SongMood.mood),
+        matching_ids = [row[0] for row in id_query.all()]
+
+        songs = (
+            db.query(Song)
+            .options(
+                joinedload(Song.singer),
+                joinedload(Song.language),
+                joinedload(Song.genre),
+                selectinload(Song.song_moods).joinedload(SongMood.mood),
+            )
+            .filter(Song.song_id.in_(matching_ids))
+            .all()
         )
-        .filter(Song.song_id.in_(matching_ids))
-        .all()
-    )
-    logger.info("search q=%s returned %d results", q, len(songs))
-    return [_to_search_result(s) for s in songs]
+        logger.info("search q=%s returned %d results", q, len(songs))
+        return [_to_search_result(s) for s in songs]
+    except SQLAlchemyError as e:
+        logger.error("DB error in search q=%s: %s", q, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Database error during search")
 
 
 def get_liked(db: Session) -> list:
-    songs = (
-        _load_full(db)
-        .join(SongLike, Song.song_id == SongLike.song_id)
-        .filter(SongLike.status == "liked")
-        .all()
-    )
-    logger.info("get_liked: returned %d songs", len(songs))
-    return [_to_song_response(s) for s in songs]
+    try:
+        songs = (
+            _load_full(db)
+            .join(SongLike, Song.song_id == SongLike.song_id)
+            .filter(SongLike.status == "liked")
+            .all()
+        )
+        logger.info("get_liked: returned %d songs", len(songs))
+        return [_to_song_response(s) for s in songs]
+    except SQLAlchemyError as e:
+        logger.error("DB error in get_liked: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Database error while fetching liked songs")
 
 
 def like_song(song_id: int, db: Session) -> dict:
@@ -140,31 +159,47 @@ def dislike_song(song_id: int, db: Session) -> dict:
 
 
 def _upsert_like(song_id: int, status: str, db: Session) -> dict:
-    song = db.query(Song).filter(Song.song_id == song_id).first()
-    if not song:
-        raise HTTPException(status_code=404, detail="Song not found")
+    try:
+        song = db.query(Song).filter(Song.song_id == song_id).first()
+        if not song:
+            raise HTTPException(status_code=404, detail="Song not found")
 
-    like = db.query(SongLike).filter(SongLike.song_id == song_id).first()
-    if like:
-        like.status = status
-        like.updated_at = datetime.utcnow()
-    else:
-        like = SongLike(song_id=song_id, status=status)
-        db.add(like)
+        like = db.query(SongLike).filter(SongLike.song_id == song_id).first()
+        if like:
+            like.status = status
+            like.updated_at = datetime.utcnow()
+        else:
+            like = SongLike(song_id=song_id, status=status)
+            db.add(like)
 
-    db.commit()
-    logger.info("Song %d marked as %s", song_id, status)
-    return {"status": status, "song_id": song_id}
+        db.commit()
+        logger.info("Song %d marked as %s", song_id, status)
+        return {"status": status, "song_id": song_id}
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error("DB error in _upsert_like song_id=%d status=%s: %s", song_id, status, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Database error while updating like status")
 
 
 def stream(song_id: int, db: Session) -> FileResponse:
-    song = db.query(Song).filter(Song.song_id == song_id).first()
-    if not song:
-        raise HTTPException(status_code=404, detail="Song not found")
+    try:
+        song = db.query(Song).filter(Song.song_id == song_id).first()
+        if not song:
+            raise HTTPException(status_code=404, detail="Song not found")
 
-    path = song.audio_file_path
-    if not os.path.exists(path):
-        logger.error("Audio file not found: %s", path)
-        raise HTTPException(status_code=404, detail="Audio file not found on server")
+        path = song.audio_file_path
+        if not os.path.exists(path):
+            logger.error("Audio file not found: %s (song_id=%d)", path, song_id)
+            raise HTTPException(status_code=404, detail="Audio file not found on server")
 
-    return FileResponse(path, media_type="audio/mpeg")
+        return FileResponse(path, media_type="audio/mpeg")
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        logger.error("DB error in stream song_id=%d: %s", song_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Database error while fetching stream")
+    except Exception as e:
+        logger.error("Unexpected error in stream song_id=%d: %s", song_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to stream audio")
