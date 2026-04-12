@@ -1,14 +1,16 @@
 import logging
-import os
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import HTTPException
-from fastapi.responses import FileResponse
 from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from backend.config import settings
 from backend.models.song import Song, SongLike, SongMood
 from backend.models.lookup import Singer, Language, Genre, Mood
 
@@ -183,23 +185,37 @@ def _upsert_like(song_id: int, status: str, db: Session) -> dict:
         raise HTTPException(status_code=500, detail="Database error while updating like status")
 
 
-def stream(song_id: int, db: Session) -> FileResponse:
+def get_stream_url(song_id: int, db: Session) -> str:
     try:
         song = db.query(Song).filter(Song.song_id == song_id).first()
         if not song:
             raise HTTPException(status_code=404, detail="Song not found")
 
-        path = song.audio_file_path
-        if not os.path.exists(path):
-            logger.error("Audio file not found: %s (song_id=%d)", path, song_id)
-            raise HTTPException(status_code=404, detail="Audio file not found on server")
+        filename = Path(song.audio_file_path).name
 
-        return FileResponse(path, media_type="audio/mpeg")
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=f"https://{settings.r2_account_id}.r2.cloudflarestorage.com",
+            aws_access_key_id=settings.r2_access_key_id,
+            aws_secret_access_key=settings.r2_secret_access_key,
+            region_name="auto",
+        )
+
+        url = s3.generate_presigned_url(
+            ClientMethod="get_object",
+            Params={"Bucket": settings.r2_bucket_name, "Key": filename},
+            ExpiresIn=3600,
+        )
+        logger.info("Generated pre-signed URL for song_id=%d key=%s", song_id, filename)
+        return url
     except HTTPException:
         raise
     except SQLAlchemyError as e:
-        logger.error("DB error in stream song_id=%d: %s", song_id, e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Database error while fetching stream")
+        logger.error("DB error in get_stream_url song_id=%d: %s", song_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Database error while fetching stream URL")
+    except (BotoCoreError, ClientError) as e:
+        logger.error("R2 error in get_stream_url song_id=%d: %s", song_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate stream URL")
     except Exception as e:
-        logger.error("Unexpected error in stream song_id=%d: %s", song_id, e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to stream audio")
+        logger.error("Unexpected error in get_stream_url song_id=%d: %s", song_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate stream URL")

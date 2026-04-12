@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     lastfm_api_key: str = ""
     lastfm_api_secret: str = ""
 
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket_name: str = "smriti-songs"
+
     @property
     def database_url(self) -> str:
         return (

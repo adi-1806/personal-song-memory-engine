@@ -2,6 +2,7 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from backend.db.database import get_db
@@ -56,7 +57,8 @@ def get_liked_songs(db: Session = Depends(get_db)):
 @router.get("/stream/{song_id}")
 def stream_song(song_id: int, db: Session = Depends(get_db)):
     try:
-        return song_service.stream(song_id, db)
+        presigned_url = song_service.get_stream_url(song_id, db)
+        return RedirectResponse(url=presigned_url, status_code=302)
     except HTTPException:
         raise
     except Exception as e:

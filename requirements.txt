@@ -17,6 +17,7 @@ argcomplete==3.6.3
 asgiref==3.11.1
 attrs==26.1.0
 babel==2.18.0
+boto3
 cadwyn==5.4.6
 certifi==2026.2.25
 cffi==2.0.0
@@ -77,6 +78,7 @@ psutil==7.2.2
 psycopg2-binary==2.9.11
 pycparser==3.0
 pydantic==2.12.5
+pydantic-settings==2.9.1
 pydantic_core==2.41.5
 Pygments==2.20.0
 pygtrie==2.5.0

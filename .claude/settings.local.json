@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(curl -v -L \"http://localhost:8000/songs/stream/1\")",
+      "Bash(pkill -f \"uvicorn\")",
+      "Bash(uvicorn backend.main:app --host 0.0.0.0 --port 8000)",
+      "Bash(curl -v \"http://localhost:8000/songs/stream/1\")",
+      "Bash(docker restart:*)",
+      "Bash(docker compose:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} %{redirect_url}\" \"http://localhost:8000/songs/stream/1\")"
+    ]
+  }
+}
