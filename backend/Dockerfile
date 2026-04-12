@@ -7,7 +7,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend application code
-COPY backend/ ./backend/
+COPY . .
 
 # Songs folder is mounted as a volume at runtime:
 #   ./songs:/app/songs
