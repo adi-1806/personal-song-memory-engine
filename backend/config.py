@@ -8,7 +8,7 @@ LOGS_DIR = Path(__file__).parent.parent / "logs"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     postgres_user: str
     postgres_password: str
