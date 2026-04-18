@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE = process.env.REACT_APP_API_URL || 'https://personal-song-memory-engine-production.up.railway.app';
 
 const client = axios.create({ baseURL: API_BASE });
 
